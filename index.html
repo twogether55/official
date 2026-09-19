@@ -42,6 +42,11 @@ input,textarea{font:inherit;color:inherit}
 [hidden]{display:none!important}
 .dim{color:var(--dim)} .faint{color:var(--faint)}
 svg{display:block;flex:none}
+/* keyboard focus is always visible; mouse/touch focus stays quiet */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.inp:focus-visible,.search input:focus-visible,.composer textarea:focus-visible{outline:none}
+a.iconbtn,a.srow,a.btn{text-decoration:none}
+a.srow{color:inherit}
 
 /* ============================== APP SHELL ============================== */
 #app{position:fixed;left:0;top:0;width:100%;height:var(--app-h,100dvh);display:grid;grid-template-columns:76px 350px minmax(0,1fr);background:var(--bg)}
@@ -200,13 +205,38 @@ svg{display:block;flex:none}
 /* settings */
 .card{background:var(--panel-2);border:1px solid var(--line);border-radius:16px;padding:6px;margin:6px 6px 14px}
 .srow{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;width:100%;text-align:left}
-button.srow:hover{background:var(--hover)}
+button.srow:hover,a.srow:hover{background:var(--hover)}
 .srow .grow{flex:1;min-width:0}
 .srow small{display:block;color:var(--dim);font-size:12.5px}
 .srow.danger{color:var(--danger)}
+.srow.apk{color:var(--accent)}
+[data-theme="light"] .srow.apk{color:#008a49}
 .switch{width:46px;height:28px;border-radius:14px;background:var(--line);position:relative;transition:.2s;flex:none}
 .switch::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.2s}
 .switch.on{background:var(--accent)} .switch.on::after{left:21px}
+
+/* ============================== ANDROID APP PROMO ==============================
+   Shown ONLY in an Android browser. Never inside the Hushline Android app / WebView. */
+.iconbtn.apk{position:relative;color:var(--accent);background:var(--accent-soft)}
+[data-theme="light"] .iconbtn.apk{color:#008a49}
+.iconbtn.apk::after{content:"";position:absolute;top:7px;right:7px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--panel);animation:pulse 1.6s infinite}
+.apkcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--accent-soft);border:1px solid var(--accent);border-radius:16px;padding:12px 14px;margin-top:22px;color:var(--text)}
+.apkcard .ai{width:42px;height:42px;border-radius:12px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;flex:none}
+.apkcard .at{flex:1;min-width:0}
+.apkcard b{display:block}
+.apkcard small{color:var(--dim)}
+.promo{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:320;width:min(360px,calc(100vw - 28px));background:var(--panel-2);color:var(--text);
+  border:1px solid var(--accent);border-radius:22px;padding:22px 20px 18px;text-align:center;
+  box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 6px var(--accent-soft);animation:promoIn .22s ease}
+.promo .picon{width:60px;height:60px;border-radius:18px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;margin:0 auto 12px}
+.promo h3{margin:0 0 6px;font-size:19px}
+.promo p{margin:0 0 16px;color:var(--dim);font-size:14px}
+.promo .pclose{position:absolute;top:10px;right:10px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--dim)}
+.promo .pclose:hover{background:var(--hover);color:var(--text)}
+.promo .btn{display:flex;align-items:center;justify-content:center;gap:8px}
+.promo .pnote{margin-top:10px;font-size:12px;color:var(--faint)}
+@keyframes promoIn{from{opacity:0;transform:translate(-50%,-46%) scale(.96)}}
+@media (max-height:460px){.promo{top:calc(50% - 24px);padding:14px}.promo .picon{display:none}}
 
 /* ============================== CALL ============================== */
 #call{position:fixed;left:0;top:0;width:100%;height:var(--app-h,100dvh);z-index:200;background:#000;color:#fff;display:none;overflow:hidden;user-select:none;-webkit-user-select:none}
@@ -325,11 +355,26 @@ button.srow:hover{background:var(--hover)}
    Calls      : DTLS-SRTP, plus DTLS-fingerprint verification sent over
                 the E2E channel (defeats a malicious signalling server).
    Storage    : IndexedDB on this device only (friends + history).
+   Android    : "Download APK" prompts appear ONLY in an Android browser.
+                They never appear inside your Android WebView app.
    ================================================================ */
 (() => {
 'use strict';
 
 const APP_NAME = 'Hushline';
+
+/* ---------------------------------------------------------------
+   ANDROID APK SETTINGS  ← edit these
+   APK_URL      : where your APK is hosted (relative to this page, or a full https URL)
+   CALL_DELAY   : how long into a call before the popup first appears (ms)
+   REOPEN_1     : after the 1st ✕ the popup comes back after this long (ms)
+   REOPEN_2     : after the 2nd ✕ it comes back for good — with no ✕ — after this long (ms)
+   --------------------------------------------------------------- */
+const APK_URL = 'hushline.apk';
+const APK_FILE = 'hushline.apk';
+const PROMO_CALL_DELAY = 34000;
+const PROMO_REOPEN_1 = 3000;
+const PROMO_REOPEN_2 = 2000;
 
 /* STUN is free. TURN is needed for strict NATs / some mobile networks.
    The relay below is a public demo relay — replace with your own TURN
@@ -469,11 +514,14 @@ const ICONS = {
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 21h4"/>',
+  volume: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
   key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
   logo: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><rect x="9" y="10.5" width="6" height="4.5" rx="1"/><path d="M10.2 10.5V9.4a1.8 1.8 0 0 1 3.6 0v1.1"/>',
   info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/>',
-  upload: '<path d="M12 16V5M7 9l5-5 5 5M5 20h14"/>'
+  upload: '<path d="M12 16V5M7 9l5-5 5 5M5 20h14"/>',
+  share: '<circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.2 10.8l7.6-4M8.2 13.2l7.6 4"/>',
+  android: '<path d="M6 10a6 6 0 0 1 12 0"/><path d="M6 10h12v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z"/><path d="M9 5.2L7.8 3.4M15 5.2l1.2-1.8M3.5 11.5v5M20.5 11.5v5M10 20v2.5M14 20v2.5"/><circle cx="9.5" cy="7.6" r=".7" fill="currentColor" stroke="none"/><circle cx="14.5" cy="7.6" r=".7" fill="currentColor" stroke="none"/>'
 };
 function icon(name, size = 22) {
   const s = document.createElementNS(NS, 'svg');
@@ -523,6 +571,87 @@ function menuSheet(title, items) {
 async function copyText(t, okMsg = 'Copied') {
   try { await navigator.clipboard.writeText(t); toast(okMsg, 'ok'); }
   catch { const ta = h('textarea', { style: 'position:fixed;opacity:0' }); ta.value = t; document.body.append(ta); ta.select(); try { document.execCommand('copy'); toast(okMsg, 'ok'); } catch { toast('Copy failed', 'error'); } ta.remove(); }
+}
+
+/* ============================== ANDROID DETECTION + APK PROMO ==============================
+   canPromo() is true only for an Android *browser*. It is false inside:
+     • your WebView app  → detected by any of:
+         - user-agent contains "; wv)"            (standard Android WebView marker)
+         - user-agent contains "HushlineApp"      (add this to your WebView's user-agent string)
+         - window.isNativeApp === true            (inject it from your app)
+         - window.HushlineApp / flutter_inappwebview bridge objects
+         - the page was opened with ?app=1        (remembered afterwards on this device)
+     • an installed PWA (display-mode: standalone) or a Trusted Web Activity
+   It is evaluated every time it is used, so a flag your app injects a moment after load still works. */
+const IS_ANDROID = /Android/i.test(navigator.userAgent || '');
+try { if (/[?&]app=1(&|$)/.test(location.search)) localStorage.setItem('hl.native', '1'); } catch {}
+function inNativeApp() {
+  const ua = navigator.userAgent || '';
+  try { if (localStorage.getItem('hl.native') === '1') return true; } catch {}
+  try {
+    return window.isNativeApp === true || !!window.HushlineApp || !!window.flutter_inappwebview ||
+      /HushlineApp|TwogetherFlutterApp/i.test(ua) || /;\s*wv\)/.test(ua) ||
+      (document.referrer || '').startsWith('android-app://') ||
+      (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  } catch { return false; }
+}
+const canPromo = () => IS_ANDROID && !inNativeApp();
+
+let promoEl = null, promoCtx = null;
+function hidePromo(ctx) {
+  if (ctx && promoCtx !== ctx) return;
+  if (promoEl) { promoEl.remove(); promoEl = null; promoCtx = null; }
+}
+/* closable=false → no ✕ button (used for the final in-call popup). The card never covers
+   the full screen, so the call controls (mute / end call) always stay usable. */
+function showPromo({ context, closable, onClose }) {
+  if (!canPromo()) return;
+  hidePromo();
+  const text = context === 'call'
+    ? 'Your device is Android. Download the Hushline APK for your device.'
+    : 'Friend added. Your device is Android — download the Hushline APK for your device.';
+  const el = h('div', { class: 'promo' + (closable ? '' : ' locked'), role: 'dialog', 'aria-label': 'Download the Android app' },
+    closable ? h('button', { class: 'pclose', 'aria-label': 'Close', onclick: () => { hidePromo(); if (onClose) onClose(); } }, icon('close', 18)) : null,
+    h('div', { class: 'picon' }, icon('android', 32)),
+    h('h3', {}, 'Download Hushline for Android'),
+    h('p', {}, text),
+    h('a', { class: 'btn primary block', href: APK_URL, download: APK_FILE, onclick: () => toast('Download started', 'ok') }, icon('download', 18), 'Download APK'),
+    closable ? null : h('div', { class: 'pnote' }, 'This stays until the call ends.'));
+  document.body.append(el);
+  promoEl = el; promoCtx = context;
+}
+/* Add-friend flow: message 1 = the “Friend added” toast, message 2 = this popup (with ✕). */
+function promoAfterFriend() {
+  if (!canPromo()) return;
+  setTimeout(() => { if (!S.call) showPromo({ context: 'friend', closable: true }); }, 1400);
+}
+/* Call flow: popup after 34 s → ✕ → back after 3 s → ✕ → back after 2 s with NO ✕ (until the call ends). */
+function armCallPromo(c) {
+  if (!canPromo() || c.promoArmed) return; // arm once per call, even if the stream event fires twice
+  c.promoArmed = true; c.promoDismiss = 0;
+  c.timers.promo = setTimeout(() => showCallPromo(c), PROMO_CALL_DELAY);
+}
+function showCallPromo(c) {
+  if (S.call !== c || c.ended || c.state !== 'active' || !canPromo()) return;
+  const locked = c.promoDismiss >= 2;
+  showPromo({
+    context: 'call', closable: !locked,
+    onClose: () => {
+      c.promoDismiss++;
+      clearTimeout(c.timers.promo);
+      c.timers.promo = setTimeout(() => showCallPromo(c), c.promoDismiss === 1 ? PROMO_REOPEN_1 : PROMO_REOPEN_2);
+    }
+  });
+}
+/* A small download icon / card that is always available (but only in an Android browser). */
+function apkIconButton() {
+  return canPromo() ? h('a', { class: 'iconbtn apk', href: APK_URL, download: APK_FILE, title: 'Download Android app', 'aria-label': 'Download Android app', onclick: () => toast('Download started', 'ok') }, icon('android', 22)) : null;
+}
+function apkCard() {
+  return canPromo() ? h('a', { class: 'apkcard', href: APK_URL, download: APK_FILE, onclick: () => toast('Download started', 'ok') },
+    h('div', { class: 'ai' }, icon('android', 24)),
+    h('div', { class: 'at' }, h('b', {}, 'Get the Android app'), h('small', {}, 'Your device is Android — download the APK')),
+    icon('download', 20)) : null;
 }
 
 /* ============================== helpers ============================== */
@@ -597,7 +726,7 @@ const S = {
   me: null, friends: new Map(), active: null, tab: 'chats', msgs: [],
   conns: new Map(), connecting: new Map(), peer: null, net: 'connecting',
   typing: new Map(), call: null, fitMode: 'auto', pendingAdd: null,
-  settings: { theme: 'dark', notify: false, typing: true }
+  settings: { theme: 'dark', notify: false, typing: true, sound: true }
 };
 const urlCache = new Map();
 const urlFor = m => { if (!m.blob) return ''; let u = urlCache.get(m.id); if (!u) { u = URL.createObjectURL(m.blob); urlCache.set(m.id, u); } return u; };
@@ -641,10 +770,11 @@ async function addFriend(idRaw, nick) {
   if (!VALID_ID.test(id)) { toast('That is not a valid ID (05 + 64 characters)', 'error'); return false; }
   if (id === S.me.id) { toast('That is your own ID', 'error'); return false; }
   let fr = S.friends.get(id);
-  if (fr) { if (fr.status !== 'friend') { fr.status = 'friend'; } if (nick) fr.name = nick; await saveFriend(fr); }
+  if (fr) { if (fr.status !== 'friend') { fr.status = 'friend'; } if (nick) fr.name = nick; await saveFriend(fr); toast('Friend updated', 'ok'); }
   else { fr = newFriend(id, { name: (nick || '').trim().slice(0, 40) }); await saveFriend(fr); toast('Friend added', 'ok'); }
   S.tab = 'chats'; buildPanel(); refreshRail();
   openChat(id); connectTo(id, true);
+  promoAfterFriend(); // Android browser only: 2nd message, “download the APK”, with ✕
   return true;
 }
 function openAddFriend(prefill = {}) {
@@ -685,6 +815,7 @@ function buildPanel() {
   }
   p.append(h('div', { class: 'phead' },
     h('div', { style: 'flex:1;min-width:0' }, h('h1', {}, S.tab === 'chats' ? 'Messages' : 'Contacts'), h('div', { class: 'netline', id: 'netline' })),
+    apkIconButton(),
     h('button', { class: 'iconbtn accent', title: 'Add friend', 'aria-label': 'Add friend', onclick: () => openAddFriend() }, icon('userplus', 22))));
   p.append(h('div', { class: 'search' }, icon('search', 18), h('input', { id: 'psearch', placeholder: S.tab === 'chats' ? 'Search chats' : 'Search contacts', oninput: refreshList, autocomplete: 'off' })));
   p.append(h('div', { class: 'plist', id: 'plist' }));
@@ -742,15 +873,20 @@ function renderSettings(body) {
   };
   const blocked = [...S.friends.values()].filter(f => f.status === 'blocked');
   body.append(
+    canPromo() ? h('div', { class: 'card' },
+      h('a', { class: 'srow apk', href: APK_URL, download: APK_FILE, onclick: () => toast('Download started', 'ok') }, icon('android', 22),
+        h('div', { class: 'grow' }, 'Download Android app', h('small', {}, 'Your device is Android — get the APK')), icon('download', 20))) : null,
     h('div', { class: 'card' },
       h('div', { class: 'srow' }, avatar(me, 56), h('div', { class: 'grow' }, h('b', { style: 'font-size:17px' }, S.me.name || 'You'), h('small', {}, 'Your name is shared with people you talk to'))),
       row('edit', 'Change display name', '', () => editNameSheet())),
     h('div', { class: 'card' },
       h('div', { class: 'srow' }, icon('shield', 22), h('div', { class: 'grow' }, 'Your ID', h('small', {}, 'Share this so friends can add you'), h('div', { class: 'idbox mono', style: 'margin-top:8px' }, S.me.id))),
       row('copy', 'Copy my ID', '', () => copyText(S.me.id, 'ID copied')),
-      row('link', 'Copy invite link', 'Opens the app with “Add friend” filled in', () => copyText(inviteLink(), 'Invite link copied'))),
+      row('link', 'Copy invite link', 'Opens the app with “Add friend” filled in', () => copyText(inviteLink(), 'Invite link copied')),
+      navigator.share ? row('share', 'Share invite link', 'Send it through any app', shareInvite) : null),
     h('div', { class: 'card' },
       toggle('moon', 'Light theme', '', 'themeLight', async v => { S.settings.theme = v ? 'light' : 'dark'; applyTheme(); return v; }),
+      toggle('volume', 'Message sounds', 'Play a soft sound for new messages', 'sound', async v => v),
       toggle('bell', 'Notifications', 'Alerts for messages & calls when the app is in the background', 'notify', async v => {
         if (v && 'Notification' in window) { const p = await Notification.requestPermission(); if (p !== 'granted') { toast('Notifications are blocked in your browser', 'error'); return false; } }
         else if (v) { toast('Notifications are not supported here', 'error'); return false; }
@@ -769,7 +905,15 @@ function renderSettings(body) {
   );
 }
 S.settings.themeLight = false;
-function inviteLink() { return location.origin + location.pathname + '#add=' + S.me.id + '&n=' + encodeURIComponent(S.me.name || ''); }
+/* works from https:// and also from a file/WebView origin where location.origin can be "null" */
+function inviteLink() {
+  const base = /^https?:$/.test(location.protocol) ? location.origin + location.pathname : location.href.split('#')[0].split('?')[0];
+  return base + '#add=' + S.me.id + '&n=' + encodeURIComponent(S.me.name || '');
+}
+async function shareInvite() {
+  try { await navigator.share({ title: APP_NAME, text: 'Add me on ' + APP_NAME, url: inviteLink() }); }
+  catch (e) { if (e && e.name !== 'AbortError') copyText(inviteLink(), 'Invite link copied'); }
+}
 function editNameSheet() {
   openSheet((sh, close) => {
     const inp = h('input', { class: 'inp', maxlength: 40, value: S.me.name || '' });
@@ -838,7 +982,8 @@ function buildChatPane() {
         h('div', { class: 'recbar' }, h('i', { class: 'rd' }), h('span', { class: 'rt', id: 'recT' }, '0:00'), h('span', { class: 'rl' }, 'Recording…'),
           h('button', { class: 'iconbtn', title: 'Cancel', 'aria-label': 'Cancel recording', onclick: () => stopRecording(false) }, icon('trash', 22))),
         h('button', { class: 'iconbtn', id: 'btnMic', title: 'Voice message', 'aria-label': 'Record voice message', onclick: startRecording }, icon('mic', 24)),
-        h('button', { class: 'sendbtn', id: 'btnSend', hidden: true, title: 'Send', 'aria-label': 'Send', onclick: sendFromInput }, icon('send', 22)))));
+        /* one handler only: while recording it sends the voice note, otherwise it sends the text */
+        h('button', { class: 'sendbtn', id: 'btnSend', hidden: true, title: 'Send', 'aria-label': 'Send', onclick: () => (recorder ? stopRecording(true) : sendFromInput()) }, icon('send', 22)))));
   const compose = $('#composer');
   txt.addEventListener('input', () => {
     txt.style.height = 'auto'; txt.style.height = Math.min(txt.scrollHeight, 132) + 'px';
@@ -853,6 +998,7 @@ function buildChatPane() {
   compose.classList.remove('recording');
 }
 function updateSendBtn() {
+  if (recorder) return; // the send button belongs to the voice recorder while recording
   const has = $('#txt').value.trim().length > 0;
   $('#btnSend').hidden = !has; $('#btnMic').hidden = has;
 }
@@ -889,7 +1035,7 @@ function refreshChatHeader() {
   if (isReq) {
     ban.append(h('div', { class: 'banner' }, h('div', { style: 'flex:1;min-width:180px' }, h('b', {}, 'Message request'), h('div', { class: 'dim', style: 'font-size:13px' }, 'This person has your ID but isn’t in your contacts. Accept to reply and call.')),
       h('div', { class: 'btnrow' },
-        h('button', { class: 'btn primary', onclick: async () => { fr.status = 'friend'; await saveFriend(fr); refreshChatHeader(); toast('Accepted', 'ok'); } }, 'Accept'),
+        h('button', { class: 'btn primary', onclick: async () => { fr.status = 'friend'; await saveFriend(fr); refreshChatHeader(); toast('Accepted', 'ok'); promoAfterFriend(); } }, 'Accept'),
         h('button', { class: 'btn', onclick: () => blockContact(id) }, 'Block'),
         h('button', { class: 'btn', onclick: () => removeContact(id, true) }, 'Delete'))));
   }
@@ -1111,12 +1257,11 @@ async function startRecording() {
   catch (e) { toast(mediaErr(e), 'error'); return; }
   const mime = pickMime(); recChunks = []; recPeer = S.active;
   try { recorder = new MediaRecorder(recStream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined); }
-  catch { recStream.getTracks().forEach(t => t.stop()); toast('Could not start recording', 'error'); return; }
+  catch { recStream.getTracks().forEach(t => t.stop()); recorder = null; toast('Could not start recording', 'error'); return; }
   recorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
   recorder.start(250); recT0 = Date.now();
   $('#composer').classList.add('recording'); $('#recT').textContent = '0:00';
-  // send button doubles as "send recording" while recording
-  $('#btnSend').hidden = false; $('#btnSend').onclick = () => stopRecording(true);
+  $('#btnSend').hidden = false; // the send button doubles as “send recording” while recording
   recTick = setInterval(() => { const s = (Date.now() - recT0) / 1000; $('#recT').textContent = fmtDur(s); if (s >= MAX_VOICE_SEC) stopRecording(true); }, 250);
 }
 function stopRecording(send) {
@@ -1130,7 +1275,7 @@ function stopRecording(send) {
     await commitOutgoing({ id: uid(), peer, dir: 'out', type: 'voice', blob, mime: blob.type, dur, ts: Date.now(), status: 'pending' });
   };
   try { rec.stop(); } catch { rec.onstop(); }
-  $('#composer').classList.remove('recording'); $('#btnSend').onclick = sendFromInput; updateSendBtn();
+  $('#composer').classList.remove('recording'); updateSendBtn();
 }
 function mediaErr(e) {
   const n = e && e.name;
@@ -1178,7 +1323,6 @@ function connectTo(id, force) {
   S.connecting.set(id, setTimeout(() => { S.connecting.delete(id); if (conn && !conn.open) { try { conn.close(); } catch {} } }, 12000));
   attachConn(conn, true);
 }
-let probeIdx = 0;
 function probeAll() {
   const ids = [...S.friends.values()].filter(f => f.status === 'friend' && !isOnline(f.id)).map(f => f.id);
   ids.forEach((id, i) => setTimeout(() => connectTo(id), i * 350));
@@ -1305,7 +1449,7 @@ async function onIncoming(e, hd, payload) {
   await touchFriend(e.pid, m, true);
   if (S.active === e.pid && S.friends.get(e.pid).unread && !document.hidden) { fr.unread = 0; await saveFriend(fr); }
   if (S.active === e.pid) refreshChatHeader();
-  blip(); notify(dispName(fr), previewOf(m), 'msg-' + e.pid);
+  blip(); notify(dispName(fr), previewOf(m), 'msg-' + e.pid, e.pid);
 }
 async function onAck(e, hd) {
   const m = await DB.get('messages', hd.id); if (!m || m.peer !== e.pid || m.dir !== 'out' || m.status === 'delivered') return;
@@ -1332,20 +1476,24 @@ function tone(freq, start, dur, vol = 0.15) {
   const t = c.currentTime + start; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.02); g.gain.linearRampToValueAtTime(0, t + dur);
   o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
 }
-function blip() { try { if (!document.hidden && !S.call) { tone(880, 0, .12, .08); tone(1175, .1, .14, .08); } } catch {} }
+function blip() { try { if (S.settings.sound && !document.hidden && !S.call) { tone(880, 0, .12, .08); tone(1175, .1, .14, .08); } } catch {} }
 let ringTimer = null;
 function startRing() { stopRing(); const b = () => { try { tone(440, 0, .22); tone(480, .25, .22); } catch {} if (navigator.vibrate) navigator.vibrate([300, 150, 300]); }; b(); ringTimer = setInterval(b, 2200); }
 function stopRing() { clearInterval(ringTimer); ringTimer = null; if (navigator.vibrate) navigator.vibrate(0); }
-function notify(title, body, tag) {
+function notify(title, body, tag, peer) {
   if (!S.settings.notify || !('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
-  try { const n = new Notification(title, { body, tag, icon: undefined }); n.onclick = () => { window.focus(); n.close(); }; } catch {}
+  try {
+    const n = new Notification(title, { body, tag, icon: undefined });
+    n.onclick = () => { window.focus(); if (peer && S.friends.has(peer)) openChat(peer); n.close(); };
+  } catch {}
 }
 
 /* ============================== CALLS ============================== */
 const sdpFp = sdp => { const m = /a=fingerprint:\S+\s+([0-9A-Fa-f:]+)/.exec(sdp || ''); return m ? m[1].toUpperCase() : null; };
 function newCall(peer, dir, video) {
   return { id: uid(), peer, dir, video, state: 'init', mc: null, local: null, remote: null, startedAt: 0, mic: true, cam: video, remoteMic: true, remoteCam: video,
-    facing: 'user', screen: false, screenStream: null, timers: {}, verified: null, localFp: null, remoteFp: null, peerFp: null, ended: false, logged: false, wake: null };
+    facing: 'user', screen: false, screenStream: null, timers: {}, verified: null, localFp: null, remoteFp: null, peerFp: null, ended: false, logged: false, wake: null,
+    promoArmed: false, promoDismiss: 0 };
 }
 async function getMedia(video, facing = 'user') {
   const portrait = innerHeight > innerWidth;
@@ -1373,7 +1521,7 @@ function onCallSignal(e, hd) {
     if (!fr || fr.status !== 'friend') return sendEnc(e, { k: 'call-decline', callId: hd.callId, reason: 'unknown' }).catch(() => {});
     if (S.call) return sendEnc(e, { k: 'call-busy', callId: hd.callId }).catch(() => {});
     const nc = S.call = newCall(e.pid, 'in', !!hd.video); nc.id = String(hd.callId).slice(0, 64); nc.state = 'ringing';
-    showIncoming(nc); startRing(); notify(dispName(fr), `Incoming ${nc.video ? 'video' : 'voice'} call`, 'call');
+    showIncoming(nc); startRing(); notify(dispName(fr), `Incoming ${nc.video ? 'video' : 'voice'} call`, 'call', e.pid);
     nc.timers.ring = setTimeout(() => { if (S.call === nc && nc.state === 'ringing') finishCall(nc, 'missed'); }, 45000);
     return;
   }
@@ -1410,12 +1558,13 @@ function bindMc(c, mc) {
   watch();
 }
 function onCallActive(c) {
-  clearTimeout(c.timers.conn); c.state = 'active'; c.startedAt = Date.now();
+  clearTimeout(c.timers.conn); c.state = 'active'; c.startedAt = c.startedAt || Date.now();
   const rv = $('#remoteVideo'), bg = $('#remoteBg');
   rv.srcObject = c.remote; bg.srcObject = c.remote; rv.play().catch(() => {}); bg.play().catch(() => {});
   clearInterval(c.timers.tick); c.timers.tick = setInterval(() => setStatus(c), 500); setStatus(c);
   try { if (navigator.wakeLock) navigator.wakeLock.request('screen').then(w => { c.wake = w; }).catch(() => {}); } catch {}
   updateCallView(); applyFit(); armAutoHide();
+  armCallPromo(c); // Android browser only: download popup 34 s into the call
   // Verify DTLS fingerprints over the E2E channel (defeats a MITM signalling server)
   try {
     const pc = c.mc.peerConnection;
@@ -1453,6 +1602,7 @@ function endCall(reason) {
 async function finishCall(c, outcome) {
   if (c.ended) return; c.ended = true;
   const dur = c.startedAt ? Math.round((Date.now() - c.startedAt) / 1000) : 0;
+  teardownCall(c); // tear down first so the screen, camera and download popup go away immediately
   if (!c.logged) {
     c.logged = true; const inc = c.dir === 'in', kind = c.video ? 'Video call' : 'Voice call';
     const text = { completed: `${kind} · ${fmtDur(dur)}`, missed: `Missed ${kind.toLowerCase()}`, cancelled: `Cancelled ${kind.toLowerCase()}`, declined: inc ? `Declined ${kind.toLowerCase()}` : 'Call declined', noanswer: 'No answer', busy: 'Busy', failed: 'Call failed' }[outcome] || kind;
@@ -1464,17 +1614,17 @@ async function finishCall(c, outcome) {
       await saveFriend(fr);
     }
   }
-  teardownCall(c);
   if (outcome === 'declined' && c.dir === 'out') toast('Call declined'); else if (outcome === 'busy') toast('They are on another call'); else if (outcome === 'noanswer') toast('No answer');
 }
 function teardownCall(c) {
   Object.values(c.timers).forEach(t => { clearTimeout(t); clearInterval(t); });
-  stopRing();
+  stopRing(); hidePromo('call');
   try { c.mc && c.mc.close(); } catch {}
   [c.local, c.screenStream].forEach(s => s && s.getTracks().forEach(t => t.stop()));
   try { c.wake && c.wake.release(); } catch {}
   ['remoteVideo', 'remoteBg', 'localVideo'].forEach(id => { const v = $('#' + id); v.srcObject = null; });
   $('#call').classList.remove('on', 'on-ph', 'hide-ui'); hideIncoming();
+  clearTimeout(hideTimer);
   if (S.call === c) S.call = null;
 }
 
@@ -1494,7 +1644,7 @@ function showCallUI() {
   const c = S.call, fr = S.friends.get(c.peer);
   $('#call').classList.add('on');
   $('#callAv').replaceChildren(callAvatar(fr, 132)); $('#callName').textContent = dispName(fr); $('#callTitle').textContent = dispName(fr);
-  const pipEl = $('#pip'); const lv = $('#localVideo');
+  const lv = $('#localVideo');
   lv.srcObject = c.local; lv.play().catch(() => {});
   buildCallBar(); setLock(c, null); setStatus(c); updateCallView(); positionPip(true); armAutoHide();
 }
@@ -1513,7 +1663,7 @@ function setStatus(c, override) {
   const el = $('#callStatus'), sub = $('#callSub');
   let t = override;
   if (!t) t = c.state === 'calling' ? 'Calling…' : c.state === 'ringing' ? 'Ringing…' : c.state === 'connecting' ? 'Connecting…' : fmtDur((Date.now() - c.startedAt) / 1000);
-  el.textContent = t; sub.textContent = c.state === 'active' && !c.remoteCam && c.video ? 'Camera off' : (c.state === 'active' ? t : t);
+  el.textContent = t; sub.textContent = c.state === 'active' && !c.remoteCam && c.video ? 'Camera off' : t;
 }
 function setLock(c, ok) {
   const el = $('#callLock');
@@ -1591,7 +1741,7 @@ let pipCorner = 'tr';
 function positionPip(reset) {
   const pip = $('#pip'), stage = $('#stage'); if (!pip) return; if (reset) pipCorner = 'tr';
   const W = stage.clientWidth, H = stage.clientHeight, pw = pip.offsetWidth, ph = pip.offsetHeight, m = 12;
-  const top = 78, bottom = (isMobile() ? 110 : 110);
+  const top = 78, bottom = 110;
   const x = pipCorner.includes('l') ? m : W - pw - m; const y = pipCorner.includes('t') ? top : H - ph - bottom - 14;
   pip.style.left = Math.max(m, x) + 'px'; pip.style.top = Math.max(m, y) + 'px';
 }
@@ -1619,6 +1769,7 @@ function showWelcome() {
     h('div', { class: 'logo' }, icon('logo', 46)), h('h1', {}, APP_NAME), h('p', { class: 'tagline' }, 'Private chats and calls. No phone number. No email. No tracking.'),
     h('button', { class: 'btn primary block', onclick: createAccountStep }, 'Create account'),
     h('button', { class: 'btn block', onclick: restoreStep }, 'Restore from recovery key'),
+    apkCard(),
     h('div', { class: 'feat' }, ['End-to-end encrypted', 'Voice & video calls', 'Photos & voice notes', 'History stays on your device'].map(t => h('span', {}, icon('check', 14), t)))));
 }
 async function createAccountStep() {
